@@ -2,7 +2,9 @@
 
 **Web-Based Visual Schedule, Task Management and Communication System for Children with Developmental Delays**
 
-Version 1.0 (Draft) · November 13, 2026 · Course: Modeling and Simulation (Final Project)
+Version 1.1 (Draft; implementation review) · November 14, 2026 · Course: Modeling and Simulation (Final Project)
+
+This SRS defines the target product. Requirement statements and acceptance criteria describe intended behavior; they do not imply that a feature is already implemented. Section 1.6 records the current repository state.
 
 ## 1. Introduction
 
@@ -12,7 +14,7 @@ This document specifies the requirements for a web-based system that helps careg
 
 ### 1.2 Scope
 
-The System is a responsive web application with two interfaces:
+The target System is a responsive web application with two interfaces:
 
 - **Caregiver/Staff interface:** manage child profiles, build visual schedules, manage tasks, and monitor basic progress.
 - **Child interface:** a distraction-free view where the child sees the schedule, marks activities as done, and uses a picture-based communication board with text-to-speech.
@@ -65,9 +67,30 @@ The project is time-boxed to six days, so the scope favors a working, usable cor
 
 ### 1.5 Document Overview
 
-Section 2 describes the product in general. Section 3 sets scope limits. Section 4 lists functional requirements, Section 5 the use cases, Section 6 interfaces, Section 7 data, Section 8 non-functional requirements, Section 9 acceptance and usability testing, Section 10 the six-day plan, Section 11 risks, and Section 12 open items for team confirmation.
+Section 1.6 records implementation status. Section 2 describes the product in general. Section 3 sets scope limits. Section 4 lists functional requirements, Section 5 the use cases, Section 6 interfaces, Section 7 data, Section 8 non-functional requirements, Section 9 acceptance and usability testing, Section 10 the six-day plan, Section 11 risks, Section 12 established decisions and open items, and Section 13 revision history.
 
 Requirement priority uses MoSCoW: **Must** (needed for the MVP), **Should** (include if time allows), **Could** (stretch goal).
+
+### 1.6 Implementation Status — November 14, 2026
+
+The repository currently contains a TypeScript application foundation and mock-backed schedule/task APIs. The frontend is a starter page that calls the health endpoint. No complete Staff or Child workflow is available yet.
+
+| Area | Repository evidence | Status against target |
+| --- | --- | --- |
+| Database and API foundation | MySQL pool, startup check, public health route, seven-table schema, seed script, errors, validation and CORS | Implemented in code; live schema/seed execution not verified in this review |
+| Authentication (AUTH) | Schedule/task middleware accepts fixed mock user IDs as Bearer tokens | Registration, password hashing, JWT verification and account UI pending |
+| Child profiles (CHILD) | SQL table and three in-memory child fixtures | CRUD endpoints and UI pending |
+| Schedules (SCH) | Read/create/copy/change-date/delete routes with shared validation | Available in memory; SQL integration and schedule creator UI pending |
+| Tasks (TASK) | Add/edit timing/reorder/remove/complete/undo routes | Available in memory; database persistence and Staff/Child UI pending |
+| Child interface (CHD) | No Child view | Pending |
+| Communication (COMM) | SQL table and ten default cards in the seed script | Endpoints, board and TTS pending |
+| Progress (PROG) | Task completion fields exist | Summary endpoints and dashboard pending |
+| Settings (SET) | SQL table and defaults exist | Endpoints, profile editing and accessibility controls pending |
+| Verification | Build and workspace type-checks pass; API suite has 39 passing tests and one todo | Mock route behavior verified; restart persistence, MySQL integration and browser acceptance pending |
+
+The MySQL database and in-memory feature store are separate. API startup and health require MySQL connectivity, but schedule/task changes never reach that database and are lost on restart. SQL demo children (Avery, Jordan, Riley) differ from mock API children (Mia, Leo, Ava).
+
+See the [README](../README.md) for setup and verification, the [API reference](API.md) for implemented contracts, the [architecture guide](ARCHITECTURE.md) for data flow, and the [backend task plan](BACKEND_TASKS.md) for remaining work.
 
 ## 2. Overall Description
 
@@ -81,8 +104,8 @@ The System is a new, standalone web application. It has a browser-based frontend
 - Create and manage child profiles.
 - Build a daily visual schedule from a predefined activity library.
 - Manage tasks and mark them complete.
-- Supervised children interaction.
-- Monitor the progress of the child's learning.
+- Support supervised child interaction with routines and picture cards.
+- Record task completion to help Staff review participation in daily routines.
 - Present a child-friendly view of today's schedule.
 - Provide a picture-card communication board with text-to-speech.
 - Show basic progress (completion counts and rates).
@@ -103,12 +126,12 @@ All Staff roles have the same permissions in the MVP. The account records the ro
 
 - Modern browsers: current Chrome, Edge, Firefox, and Safari.
 - Devices: phone, tablet, and desktop (tablet is the expected device for the child view).
-- Server: Node.js runtime with a MySQL database, running locally for the demo, with optional cloud deployment.
+- Server: Node.js 22.12.0 or newer with npm and a MySQL database, running locally for the demo, with optional cloud deployment.
 
 ### 2.5 Design and Implementation Constraints
 
 - Time: six days of development; features must be scoped accordingly.
-- Preferred stack (subject to team confirmation): HTML + CSS + JavaScript (frontend); Node.js + Express (backend); MySQL (database); REST API.
+- Repository stack: React 19 + TypeScript + Vite 7 + CSS (frontend); Node.js + Express 5 + TypeScript (backend); MySQL through `mysql2/promise`; JSON REST API; shared Zod schemas in an npm workspace.
 - Web application only; no native mobile app.
 - Predefined icons and picture cards (emoji or bundled icon set) are used initially, avoiding image upload and storage work.
 - The child interface must run without advertisements, pop-ups or external distractions.
@@ -119,9 +142,9 @@ All Staff roles have the same permissions in the MVP. The account records the ro
 - The browser supports the Web Speech API (`speechSynthesis`) for TTS; if not, picture cards still display and a visible text label remains.
 - Children use the Child view on a device already signed in by a Staff member (see FR-CHD-01).
 - Team members can access test users (caregivers, OTs or teachers) for usability testing.
-- Allows interaction between users and children.
-- Sample data (three demo children) is acceptable for demonstration.
-- Only the child's first name or nickname and age are collected; no sensitive medical records are stored.
+- Staff supervise children's use of the Child interface.
+- Sample data (three demo children) is acceptable for demonstration; the current SQL seed and mock API fixtures are independent datasets (see Section 1.6).
+- Child profiles collect only first name or nickname, age, delay domain, optional notes and a predefined avatar. Medical records are outside scope; notes must not be used to store sensitive medical details.
 
 ## 3. Scope Limitations
 
@@ -306,29 +329,36 @@ The following are out of scope for this release:
 
 ### 6.2 Software and API Interface
 
-The frontend communicates with the backend through a JSON REST API under `/api`. The endpoints below are the proposed set; final names may be adjusted by the team. All routes except register and login require a valid token.
+The frontend communicates with the backend through a JSON REST API under `/api`. The target authentication model uses signed JWTs on all feature routes; health, registration and login are public. Current schedule/task routes use temporary mock tokens instead. See the [API reference](API.md) for the exact implemented request and response contracts.
 
-| Area | Method and path | Purpose |
-| --- | --- | --- |
-| Auth | `POST /api/auth/register` | Create account |
-| Auth | `POST /api/auth/login` | Log in, return JWT |
-| Auth | `GET /api/auth/me` | Current user |
-| Children | `GET /api/children` | List own children |
-| Children | `POST /api/children` | Create child |
-| Children | `GET, PUT, DELETE /api/children/:id` | Read, update, delete child |
-| Activities | `GET /api/activities` | Predefined activity library |
-| Schedules | `GET /api/schedules?childId=&date=` | Get schedule with its tasks |
-| Schedules | `POST /api/schedules` | Create schedule |
-| Schedules | `PUT, DELETE /api/schedules/:id` | Update, delete schedule |
-| Tasks | `POST /api/tasks` | Add task to schedule |
-| Tasks | `PUT, DELETE /api/tasks/:id` | Update (time, duration, order), remove task |
-| Tasks | `PATCH /api/tasks/:id/complete` | Mark done (and undo) |
-| Cards | `GET /api/cards?childId=` | Default and custom picture cards |
-| Cards | `POST /api/cards` | Add custom card |
-| Cards | `DELETE /api/cards/:id` | Delete custom card |
-| Progress | `GET /api/progress/:childId?range=7d` | Completion summary |
+| Area | Method and path | Purpose | Current status |
+| --- | --- | --- | --- |
+| Health | `GET /api/health` | Database connectivity and API status | Implemented; public |
+| Auth | `POST /api/auth/register` | Create account | Planned |
+| Auth | `POST /api/auth/login` | Log in, return JWT | Planned |
+| Auth | `GET /api/auth/me` | Current user | Planned |
+| Auth | `PUT /api/auth/me` | Update own profile name | Proposed; contract to confirm |
+| Children | `GET /api/children` | List own children | Planned |
+| Children | `POST /api/children` | Create child | Planned |
+| Children | `GET, PUT, DELETE /api/children/:id` | Read, update, delete child | Planned |
+| Activities | `GET /api/activities` | Predefined activity library | Planned |
+| Schedules | `GET /api/schedules?childId=&date=` | Get schedule with ordered tasks | Implemented with mocks |
+| Schedules | `POST /api/schedules` | Create schedule; optional `copyFrom` source date | Implemented with mocks |
+| Schedules | `PUT, DELETE /api/schedules/:id` | Change date, delete schedule | Implemented with mocks |
+| Tasks | `POST /api/tasks` | Add library or custom task to schedule | Implemented with mocks |
+| Tasks | `PUT, DELETE /api/tasks/:id` | Update time, duration, order; remove task | Implemented with mocks |
+| Tasks | `PATCH /api/tasks/:id/complete` | Mark done and undo | Implemented with mocks |
+| Cards | `GET /api/cards?childId=` | Default and custom picture cards | Planned |
+| Cards | `POST /api/cards` | Add custom card for an owned child | Planned |
+| Cards | `DELETE /api/cards/:id` | Delete own custom card | Planned |
+| Progress | `GET /api/progress/:childId?range=7d` | Completion summary | Planned |
+| Settings | `GET, PUT /api/settings` | Read/update own accessibility settings | Proposed; contract to confirm |
 
-The API shall use standard HTTP status codes (200, 201, 400, 401, 403, 404, 409, 500) and return errors as `{ "error": "message" }`.
+Unimplemented routes are not available through the current app. Card hiding is a target requirement (FR-COMM-07), but its endpoint and persistence model remain open.
+
+The API shall use HTTP status codes 200, 201, 400, 401, 403, 404, 409 and 500, with feature errors as `{ "error": "message" }`. Current ownership checks use 404 to avoid revealing another user's resources. Health is an explicit exception: it returns a typed health object with HTTP 200 when connected or 503 when disconnected.
+
+Implemented schedule/task validation uses positive IDs, valid calendar dates (`YYYY-MM-DD`), zero-padded `HH:MM` times, durations of 1–1440 minutes or null, and consecutive one-based task positions. Request bodies use camelCase references (`childId`, `scheduleId`, `activityId`, `copyFrom`); task timing updates and resource responses use snake_case. A completion request is `{ "done": true }` or `{ "done": false }`.
 
 ### 6.3 Hardware and Communication Interfaces
 
@@ -347,13 +377,16 @@ The API shall use standard HTTP status codes (200, 201, 400, 401, 403, 404, 409,
 | schedules | id, child_id, schedule_date, created_at (unique per child and date) |
 | tasks | id, schedule_id, activity_id (nullable), name, icon, start_time (nullable), duration_min (nullable), position, status (pending / done), completed_at (nullable) |
 | picture_cards | id, child_id (null for default cards), category, label, icon, created_at |
-| settings (optional) | user_id, font_size, contrast, sound_on |
+| settings | user_id (primary key and owner FK), font_size (small / medium / large), contrast (normal / high), sound_on |
+
+The seven tables above are present in [schema.sql](../apps/api/schema.sql). Feature routes currently use in-memory records rather than SQL rows. The `settings` table is created even though its API is pending. `users.password_hash` is currently nullable for the non-login SQL demo account; registered users must receive a salted hash when authentication is implemented. The card table has no hidden/visibility field yet.
 
 ### 7.2 Relationships
 
 - One user owns many children.
 - One child has many schedules (one per date).
-- One schedule has many tasks, ordered by position.
+- One schedule has many tasks, ordered by position; the SQL schema enforces a unique `(schedule_id, position)` pair.
+- A task may reference an activity; deleting that library activity sets the reference to null while preserving the task's name and icon.
 - Default picture cards are shared; custom cards belong to one child.
 - Deleting a child cascades to its schedules, tasks and custom cards.
 
@@ -361,7 +394,7 @@ The API shall use standard HTTP status codes (200, 201, 400, 401, 403, 404, 409,
 
 - Passwords are never stored or returned in plain text.
 - Every query on children, schedules, tasks and cards is filtered by the authenticated user's ownership.
-- Dates are stored in a consistent format (ISO 8601, `YYYY-MM-DD`), and times in `HH:MM`.
+- Schedule dates use `YYYY-MM-DD`; the API uses `HH:MM` for start times, while MySQL stores `DATE` and `TIME` values. Completion responses currently use ISO UTC timestamps; the SQL column is `DATETIME`, so timezone conversion must be defined when the database layer is integrated.
 - The child's data is limited to what the features need (name or nickname, age, delay domain, notes). Staff are advised not to enter sensitive medical details in the notes field.
 
 ## 8. Non-Functional Requirements
@@ -417,7 +450,7 @@ The API shall use standard HTTP status codes (200, 201, 400, 401, 403, 404, 409,
 
 ### 9.1 MVP Acceptance Criteria
 
-The MVP is accepted when all of the following can be demonstrated on the local system:
+The MVP is accepted when all of the following can be demonstrated on the local system. These are target criteria; the current repository does not yet satisfy the complete list.
 
 1. A Staff user can register, log in and log out.
 2. A Staff user can create, edit and delete a child profile and sees only their own children.
@@ -427,14 +460,19 @@ The MVP is accepted when all of the following can be demonstrated on the local s
 6. The dashboard shows today's completion and a 7-day summary per child.
 7. The system is usable on a phone-sized and a desktop-sized screen.
 
+Acceptance item 5 includes phrase building, although FR-COMM-04 is marked Should. Keep the phrase in the acceptance baseline unless the team explicitly revises that criterion. API checks support acceptance, but cannot establish Child UI, speech output, responsive behavior or usability.
+
 ### 9.2 Verification Methods
 
 | Method | Applies to |
 | --- | --- |
 | Manual test cases (per requirement group, with pass/fail record) | Functional requirements |
-| API tests (e.g., Postman collection) | Authentication, CRUD, data isolation, status codes |
+| Automated API tests (Vitest + Supertest; currently schedule/task routes only) | Route behavior, validation, ownership and status codes; extend to real authentication and database CRUD |
+| MySQL integration and restart checks (pending) | Schema, seeds, constraints, cascades and persistent feature data |
 | Responsive checks in browser developer tools (phone, tablet, desktop) | UI and compatibility |
 | Usability testing with real users (task-based test plus SUS questionnaire) | Usability requirements |
+
+The current automated suite imports the Express app directly and resets the mock store before each test. On November 14, 2026, `npm run test -w @starter/api` reported **39 passed and one todo** (`state survives a server restart`); `npm run build` and `npm run typecheck` also passed. This verifies in-process behavior, not database durability, JWT expiry, health connectivity, browser rendering, performance targets or usability. Schema/seed execution against live MySQL and browser acceptance were not performed in this review.
 
 ### 9.3 Suggested Usability Test Tasks
 
@@ -449,7 +487,7 @@ Record, per participant: task success, time taken, errors, and the SUS score.
 
 ## 10. Six-Day Delivery Plan
 
-The table maps requirement priorities to a realistic schedule. The team should adjust it once members and tasks are assigned.
+This is the original planning baseline, not a record of completed days. Section 1.6 records actual implementation status; the [backend task plan](BACKEND_TASKS.md) lists the remaining dependencies. The team should revise assignments and dates against that status.
 
 | Day | Focus | Output |
 | --- | --- | --- |
@@ -474,13 +512,29 @@ The project brief lists the final submission as November 18 or 20 (confirm with 
 | Team unfamiliar with part of the stack | Slower progress | Keep the stack as chosen; assign tasks by strength; pair on shared issues |
 | Data privacy concerns about children's information | Ethical and compliance issues | Collect minimal data; use first names or nicknames; get consent for testing |
 
-## 12. Open Items for Team Confirmation
+## 12. Established Decisions and Open Items
 
-1. Technology stack: confirm React + TypeScript + Vite, Node.js + Express + TypeScript, MySQL.
-2. Child access: confirm that the Child view opens from a signed-in Staff session (no child login), with an optional PIN to exit.
-3. Roles: confirm that Caregiver, OT and SPED Teacher have identical permissions in the MVP.
-4. Shared children: decide whether an OT or teacher needs access to a child created by a caregiver (excluded for now).
-5. Schedule model: confirm one schedule per child per date, with copy-from-date, rather than a repeating weekly template.
-6. Icons: choose the icon source (emoji or a licensed open icon set).
-7. Language: confirm English only, or add Filipino labels and TTS if time allows.
-8. Deployment: decide between a local demo only and optional live deployment.
+### 12.1 Established in the Repository
+
+- React + TypeScript + Vite, Node.js + Express + TypeScript, MySQL, and npm workspaces are already selected.
+- The schema and mock API enforce one schedule per child/date; copy-from-date is implemented in memory.
+- Role values are `caregiver`, `ot` and `sped_teacher`; child data is owned by one Staff account. Shared-child access and role-specific permissions remain outside MVP scope.
+- Icons currently use emoji. The SQL seed and mock activity catalog differ in size and some icons; unify them during integration.
+- Child access through a signed-in Staff session and English-only content remain the requirements baseline; the Child interface is pending.
+
+### 12.2 Remaining Team Decisions
+
+1. Confirm the final submission date with the instructor (November 18 or 20 is still unresolved).
+2. Assign owners and revise the six-day plan to account for unfinished authentication, SQL feature persistence and all product UI.
+3. Decide whether the deliberate Staff exit needs a PIN for the MVP.
+4. Confirm the proposed profile/settings endpoint names and the card hide operation, including any schema change.
+5. Define the application timezone for "today," seven-day progress, completion timestamps and SQL seed dates.
+6. Confirm whether deployment remains local-only or needs hosting configuration and a live environment.
+7. Keep phrase building in the acceptance baseline or explicitly revise acceptance item 5 and its priority mapping.
+
+## 13. Revision History
+
+| Version | Date | Changes |
+| --- | --- | --- |
+| 1.0 | November 13, 2026 | Initial draft requirements and six-day plan |
+| 1.1 | November 14, 2026 | Aligned stack and API inventory with source; added implementation status, data-layer limits and verification evidence; clarified outstanding acceptance and integration decisions |
